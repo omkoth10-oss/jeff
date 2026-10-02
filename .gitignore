@@ -1,0 +1,12 @@
+node_modules
+dist
+*.blend1
+__pycache__
+.DS_Store
+# dev output (renders, contact sheets, comparisons)
+screenshots/
+# third-party KTX-Software binaries (download from https://github.com/KhronosGroup/KTX-Software)
+tools/ktx/
+# backups made before risky changes
+blender/*_before_*.blend
+blender/exports/*_before_*.glb

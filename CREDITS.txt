@@ -1,0 +1,56 @@
+Moonlit Village - third-party asset credits
+===========================================
+
+Only CC0 and CC-BY assets are used. CC0 assets are listed for reference;
+CC-BY assets are listed with the attribution their license requires.
+
+Libraries
+---------
+three.js (MIT)                https://threejs.org
+postprocessing (Zlib)         https://github.com/pmndrs/postprocessing
+Rapier physics (Apache-2.0)   https://rapier.rs  (@dimforge/rapier3d-compat, Dimforge)
+Draco decoder (Apache-2.0)    https://github.com/google/draco
+Basis Universal transcoder (Apache-2.0)  https://github.com/BinomialLLC/basis_universal
+
+Fonts
+-----
+Shippori Mincho by FONTDASU (SIL Open Font License 1.1)  https://fonts.google.com/specimen/Shippori+Mincho
+    (bundled with @fontsource/shippori-mincho; used for the KAGE title screen)
+
+Textures (Poly Haven, CC0 - no attribution required, listed for reference)
+--------------------------------------------------------------------------
+Dark Rock by Amal Kumar                       https://polyhaven.com/a/dark_rock
+Forest Ground 03 by Rob Tuytel                https://polyhaven.com/a/forrest_ground_03
+Stone Pathway by Amal Kumar                   https://polyhaven.com/a/stone_pathway
+Leafy Grass by Charlotte Baglioni             https://polyhaven.com/a/leafy_grass
+Dark Wooden Planks by Amal Kumar              https://polyhaven.com/a/dark_wooden_planks
+Grey Roof Tiles by Rob Tuytel                 https://polyhaven.com/a/grey_roof_tiles
+White Stucco by Amal Kumar                    https://polyhaven.com/a/white_stucco
+Castle Wall Variation by Rob Tuytel           https://polyhaven.com/a/castle_wall_varriation
+
+Models (CC-BY 4.0 - attribution required; https://creativecommons.org/licenses/by/4.0/)
+---------------------------------------------------------------------------------------
+"Assassin-male" by milakpro - https://sketchfab.com/models/1ab4305b96674fb2b8a2b22e313e8f68
+    Used as the ninja. Changes: recoloured black, posed standing (Idle), reduced to 25k triangles,
+    textures resized and compressed.
+"Pine tree 01" by POLYSCAN3D - https://sketchfab.com/models/ba7c8f8e1cb549b3a3a30f1221386c8c
+    Used for the fir forest. Changes: split into two trees, rescaled, textures compressed.
+"Sakura Tree 01 - Low Poly Model" by thejogoss9 - https://sketchfab.com/models/147ae7d0d332456a99ec6195e9b0cd4f
+    Used for the cherry trees. Changes: rescaled, textures compressed.
+"Scots Pine Trees Set" by c3posw01 - https://sketchfab.com/models/422b961ff3d14e7baa7e9077572b2247
+    Three of its pines are used in the outer forest. Changes: rescaled, textures resized and compressed.
+
+Models (Poly Haven, CC0)
+------------------------
+Rock Moss Set 01 by Kless Gyzen               https://polyhaven.com/a/rock_moss_set_01
+Boulder 01 by Rico Cilliers                   https://polyhaven.com/a/boulder_01
+    Both simplified; they use the Dark Rock texture in the scene.
+
+Made for this project
+---------------------
+Terrain, rivers, waterfalls, all buildings, the bridge, pagoda, torii, watchtower,
+shrine, boat, lanterns, the shoji texture and the moon texture were made in Blender
+for this project (blender/scripts/). The stone river walls, street props, ground cover,
+kawara roof tiling, rock strata and the ninja's animation are generated in code
+(src/world/, src/game/proc/). All sound and music is synthesised in code at startup
+(src/audio/): no recordings or third-party audio are used.
