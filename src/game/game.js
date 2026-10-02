@@ -23,6 +23,7 @@ export async function createGame(o) {
   const down = physics.world.castRay(new physics.RAPIER.Ray({ x: NINJA.position.x, y: NINJA.position.y + 5, z: NINJA.position.z }, { x: 0, y: -1, z: 0 }), 20, true);
   const groundY = down ? NINJA.position.y + 5 - down.timeOfImpact : NINJA.position.y;
   const player = createPlayer(physics, NINJA.position, { yaw: NINJA.yaw + Math.PI, groundY });
+  const ledge = player.state.feet.clone(); // where every loop begins
   const rig = createCameraRig(camera, physics, { yaw: CAMERA.yaw, pitch: CAMERA.pitch });
   ninja.scale.setScalar(MODEL_SCALE);
   ninja.position.copy(player.state.feet);
@@ -30,7 +31,8 @@ export async function createGame(o) {
   const animator = createProceduralAnimator({ root: ninja, model: ninjaModel, ground: groundProbe(physics) });
   if (animator.rig.missing.length) console.warn('[game] missing bones', animator.rig.missing);
 
-  const state = { started: false, paused: false, driving: false }; // driving: the walk test is in control
+  // driving: the walk test is in control; cinematic: the time loop holds the controls (midnight)
+  const state = { started: false, paused: false, driving: false, cinematic: false };
   const start = () => {
     if (state.started) return;
     state.started = true;
@@ -46,7 +48,7 @@ export async function createGame(o) {
     const inp = input.poll();
     if (state.driving) start();
     // before the first click the ninja stays put for the opening shot
-    const control = state.started && (input.state.locked || state.driving);
+    const control = state.started && (input.state.locked || state.driving) && !state.cinematic;
     if (!control) {
       inp.move.x = inp.move.y = 0;
       inp.jumpPressed = false;
@@ -89,9 +91,20 @@ export async function createGame(o) {
     });
   }
 
+  // a new loop (src/loop): back on the ledge facing the valley, the camera in the opening
+  // shot, easing into the gameplay framing after `hold` seconds
+  function restartAtLedge({ hold = 0 } = {}) {
+    player.teleport(ledge);
+    player.state.facing = NINJA.yaw + Math.PI;
+    player.state.lastSafe.copy(ledge);
+    ninja.position.copy(ledge);
+    ninja.rotation.y = player.state.facing;
+    rig.reset({ yaw: CAMERA.yaw, pitch: CAMERA.pitch, hold });
+  }
+
   const blob = createContactShadow(physics, player);
   o.scene.add(blob.mesh);
-  const api = { physics, input, player, rig, animator, hud, state, update, start, ninjaModel, surfaceAt, onEvent: null };
+  const api = { physics, input, player, rig, animator, hud, state, update, start, restartAtLedge, ninjaModel, surfaceAt, onEvent: null };
   return api;
 }
 

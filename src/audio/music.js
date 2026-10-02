@@ -192,6 +192,10 @@ export function createMusic(ctx, out, send, bank) {
         } else setSection('rest', now, 6);
       } else if (section !== 'play' || prev === 'game') setSection('play', now, 5);
     },
+    // a new loop begins (src/loop): the music comes back in with it
+    restart() {
+      if (mode === 'game') setSection('play', ctx.currentTime, 8);
+    },
     update() {
       if (mode === 'off') return;
       const now = ctx.currentTime;

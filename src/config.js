@@ -26,3 +26,11 @@ export const CAMERA = {
 export const MOON_NDC = new THREE.Vector2(0.589, 0.902);
 
 export const REFERENCE_ASPECT = 1536 / 1024;
+
+// The time loop: the in-game hour from 11:00 PM to midnight lasts this many real
+// seconds (12 minutes: one in-game minute is 12 s). See src/loop/clock.js.
+export const LOOP_DURATION = 12 * 60;
+
+// The shrine plaza on the torii terrace (blender/scripts/terrain_lib.py TORII_TERRACE),
+// between the torii and the shrine hall: the midnight pulse rises here.
+export const SHRINE_PLAZA = new THREE.Vector3(72.5, 8.5, -116);

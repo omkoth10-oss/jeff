@@ -16,7 +16,8 @@ const ROPES = [
   [[-0.05, 0.6, 0.0, 1.0], [0.3, 0.26, -0.3, 0.8]],
 ];
 
-export function createWaterfalls(falls, time) {
+// tint: the moonlight on the falls (the water's uWaterTint, set by the moon's phase)
+export function createWaterfalls(falls, time, tint = { value: new THREE.Color(1, 1, 1) }) {
   const group = new THREE.Group();
   group.name = 'Waterfalls';
   const pos = [], uv = [], rope = [], index = [];
@@ -64,24 +65,25 @@ export function createWaterfalls(falls, time) {
   geo.setAttribute('aRope', new THREE.Float32BufferAttribute(rope, 4)); // seed, brightness, fall fraction, width fraction
   geo.setIndex(index);
   geo.computeBoundingSphere();
-  const mesh = new THREE.Mesh(geo, createFallMaterial(time));
+  const mesh = new THREE.Mesh(geo, createFallMaterial(time, tint));
   mesh.renderOrder = 2;
   mesh.name = 'WaterfallRopes';
   group.add(mesh);
-  group.add(createSplash(splash, time));
-  group.add(createBoil(falls, time));
+  group.add(createSplash(splash, time, tint));
+  group.add(createBoil(falls, time, tint));
   return { root: group };
 }
 
-function createFallMaterial(time) {
+function createFallMaterial(time, tint) {
   const mat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, depthWrite: false, side: THREE.DoubleSide });
   mat.onBeforeCompile = (shader) => {
     shader.uniforms.uTime = time;
+    shader.uniforms.uTint = tint;
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', '#include <common>\nattribute vec4 aRope;\nvarying vec4 vRope;\nvarying vec2 vFallUv;')
       .replace('#include <uv_vertex>', '#include <uv_vertex>\nvFallUv = uv;\nvRope = aRope;');
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', `#include <common>\nuniform float uTime;\nvarying vec4 vRope;\nvarying vec2 vFallUv;\n${noiseGLSL}`)
+      .replace('#include <common>', `#include <common>\nuniform float uTime;\nuniform vec3 uTint;\nvarying vec4 vRope;\nvarying vec2 vFallUv;\n${noiseGLSL}`)
       .replace(
         '#include <color_fragment>',
         `{
@@ -107,7 +109,7 @@ function createFallMaterial(time) {
         float froth = smoothstep(0.55, 1.0, u) * (0.6 + 0.4 * churn);
         float white = clamp(streak * 0.7 + lip * 0.8 + froth * 0.7, 0.0, 1.0);
         vec3 dark = vec3(0.06, 0.085, 0.12), bright = vec3(0.4, 0.46, 0.57);
-        diffuseColor.rgb = mix(dark, bright, white) * mix(0.8, 1.0, vRope.y);
+        diffuseColor.rgb = mix(dark, bright, white) * mix(0.8, 1.0, vRope.y) * uTint;
         // the top edge is torn where the water tips over, not a ruler line
         float lipTear = smoothstep(0.0, 0.03 + 0.07 * vnoise(vec2(wx * 2.0 + seed * 11.0, uTime * 0.7)), y);
         diffuseColor.a = edge * lipTear * mix(0.45, 0.95, max(white, froth)) * mix(0.7, 1.0, body) * mix(0.45, 1.0, core) * smoothstep(0.0, 0.02, u + 0.02);
@@ -120,7 +122,7 @@ function createFallMaterial(time) {
 
 // Droplets thrown up from the landing point: each rises and falls on a loop; soft
 // moonlit sprites. list: [x, y, z, seed, brightness]
-function createSplash(list, time) {
+function createSplash(list, time, tint) {
   const geo = new THREE.InstancedBufferGeometry();
   geo.setAttribute('position', new THREE.Float32BufferAttribute([-1, -1, 0, 1, -1, 0, 1, 1, 0, -1, 1, 0], 3));
   geo.setIndex([0, 1, 2, 0, 2, 3]);
@@ -129,7 +131,7 @@ function createSplash(list, time) {
   geo.instanceCount = list.length;
   geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 1e5);
   const mat = new THREE.ShaderMaterial({
-    uniforms: { uTime: time },
+    uniforms: { uTime: time, uTint: tint },
     vertexShader: /* glsl */ `
       attribute vec4 iA;
       attribute float iB;
@@ -152,12 +154,13 @@ function createSplash(list, time) {
         gl_Position = projectionMatrix * viewMatrix * vec4(wp, 1.0);
       }`,
     fragmentShader: /* glsl */ `
+      uniform vec3 uTint;
       varying vec2 vUv;
       varying float vA;
       void main() {
         float r2 = dot(vUv, vUv);
         if (r2 > 1.0) discard;
-        gl_FragColor = vec4(vec3(0.5, 0.57, 0.7), vA * 0.3 * (1.0 - r2) * (1.0 - r2));
+        gl_FragColor = vec4(vec3(0.5, 0.57, 0.7) * uTint, vA * 0.3 * (1.0 - r2) * (1.0 - r2));
       }`,
     transparent: true,
     depthWrite: false,
@@ -172,7 +175,7 @@ function createSplash(list, time) {
 // Churning white water where each fall lands: a row of camera-facing sheets across the
 // landing, each a few metres tall, billowing upward. It hides where the falling water
 // meets the pool and runs into the mist above it.
-function createBoil(falls, time) {
+function createBoil(falls, time, tint) {
   const list = [];
   falls.forEach((f, fi) => {
     const [tx, , tz] = f.top, [fx, fy, fz] = f.foot;
@@ -193,7 +196,7 @@ function createBoil(falls, time) {
   geo.instanceCount = list.length;
   geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 1e5);
   const mat = new THREE.ShaderMaterial({
-    uniforms: { uTime: time },
+    uniforms: { uTime: time, uTint: tint },
     vertexShader: /* glsl */ `
       attribute vec4 iPos;
       attribute vec2 iSize;
@@ -212,6 +215,7 @@ function createBoil(falls, time) {
       }`,
     fragmentShader: /* glsl */ `
       uniform float uTime;
+      uniform vec3 uTint;
       varying vec2 vUv;
       varying float vSeed;
       varying vec2 vSize;
@@ -224,7 +228,7 @@ function createBoil(falls, time) {
         float shape = smoothstep(0.0, 0.25, vUv.x) * smoothstep(1.0, 0.75, vUv.x) * smoothstep(top, top * 0.3, vUv.y) * smoothstep(0.0, 0.1, vUv.y);
         float a = shape * smoothstep(0.3, 0.7, n + 0.35 * (1.0 - vUv.y));
         vec3 col = mix(vec3(0.22, 0.28, 0.38), vec3(0.55, 0.62, 0.75), smoothstep(0.4, 0.9, n) * (1.0 - vUv.y * 0.5));
-        gl_FragColor = vec4(col, a * 0.85);
+        gl_FragColor = vec4(col * uTint, a * 0.85);
       }`,
     transparent: true,
     depthWrite: false,

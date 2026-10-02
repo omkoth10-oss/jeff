@@ -14,6 +14,9 @@ import { SAMPLES } from './samples.js';
 //   player    footsteps on stone, earth, grass, wood or water, jumps and landings (from
 //             the game: game.onEvent)
 //   music     generative, sparse (music.js)
+//   loop      the time loop (src/loop): the end of the hour hushes the ambience and the
+//             music (footsteps stay), a swell builds under the midnight pulse, and one
+//             bell rings in the dark before the next loop
 //
 // Where the listener is decides the mix, re-evaluated ten times a second and always
 // eased (setTargetAtTime, seconds), never switched: how many houses are near, how far
@@ -67,6 +70,13 @@ export function createSoundscape({ settings = {} } = {}) {
   worldMode.connect(worldVol);
   const worldModeSend = ctx.createGain();
   worldModeSend.connect(worldSend);
+  // the ambience (beds and events) and the music have buses of their own, so the time
+  // loop can hush them (api.hush) while the player's footsteps and the bell carry on
+  const ambience = ctx.createGain(), ambienceSend = ctx.createGain(), musicBus = ctx.createGain(), musicBusSend = ctx.createGain();
+  ambience.connect(worldMode);
+  ambienceSend.connect(worldModeSend);
+  musicBus.connect(musicVol);
+  musicBusSend.connect(musicSend);
 
   function setVolumes(s = {}) {
     const v = (x, d) => Math.pow(Math.min(1, Math.max(0, x ?? d)), 2);
@@ -119,8 +129,8 @@ export function createSoundscape({ settings = {} } = {}) {
     pan.distanceModel = 'inverse';
     pan.rolloffFactor = 0; // distance is modelled by g and lp
     send.gain.value = sendLevel;
-    g.connect(lp).connect(pan).connect(worldMode);
-    pan.connect(send).connect(worldModeSend);
+    g.connect(lp).connect(pan).connect(ambience);
+    pan.connect(send).connect(ambienceSend);
     return {
       input: g,
       send,
@@ -148,11 +158,11 @@ export function createSoundscape({ settings = {} } = {}) {
     bank = b;
     await loadSamples(ctx, bank);
     reverb.buffer = bank.reverb;
-    music = createMusic(ctx, musicVol, musicSend, bank);
-    const insectBus = gainNode(0, worldMode);
+    music = createMusic(ctx, musicBus, musicBusSend, bank);
+    const insectBus = gainNode(0, ambience);
     beds = {
-      wind: gainNode(0, worldMode),
-      leaves: gainNode(0, worldMode),
+      wind: gainNode(0, ambience),
+      leaves: gainNode(0, ambience),
       insects: insectBus,
       river: spatial(0.08),
       falls: [spatial(0.12), spatial(0.12)],
@@ -355,7 +365,7 @@ export function createSoundscape({ settings = {} } = {}) {
       if (Math.random() > e.w()) continue;
       const pos = placeEvent(e);
       if (!pos) continue;
-      play(pick(bank.events[k]), { pos, gain: e.gain * rand(0.75, 1.1), rate: rand(0.94, 1.06), send: e.send });
+      play(pick(bank.events[k]), { pos, gain: e.gain * rand(0.75, 1.1), rate: rand(0.94, 1.06), send: e.send, dest: ambience, sendDest: ambienceSend });
       api.log.push([k, +now.toFixed(1)]);
       if (api.log.length > 60) api.log.shift();
     }
@@ -388,6 +398,7 @@ export function createSoundscape({ settings = {} } = {}) {
     tone.frequency.setTargetAtTime(m === 'title' ? 3400 : m === 'tour' ? 12000 : 19000, now, m === 'title' ? 0.8 : 1.4);
     worldMode.gain.setTargetAtTime(m === 'title' ? 0.75 : 1, now, 1.2);
     music?.setMode(m);
+    applyHush(now, 1); // the loop's hush is for the game only (the title keeps its music)
     // on the title, the bell rings once across the valley soon after the sound starts
     if (m === 'title') titleBell = now + rand(4, 8);
   }
@@ -427,6 +438,64 @@ export function createSoundscape({ settings = {} } = {}) {
     }
     music.update();
   };
+  // ---- the time loop (src/loop)
+  let hushLevel = 0;
+  function applyHush(now = ctx.currentTime, tau = 0.4) {
+    const k = mode === 'game' ? 1 - hushLevel : 1;
+    for (const g of [ambience, ambienceSend, musicBus, musicBusSend]) g.gain.setTargetAtTime(k, now, tau);
+  }
+  // 0 = the night as usual .. 1 = silence (music and ambience; the player is still heard)
+  api.hush = (level) => {
+    if (Math.abs(level - hushLevel) < 0.004 && (level > 0 || hushLevel === 0)) return;
+    hushLevel = level;
+    applyHush();
+  };
+  // the midnight pulse building: a low swell and air rising through a widening band,
+  // for `rise` seconds, then cut off by the white
+  api.swell = (rise) => {
+    if (!bank) return;
+    const now = ctx.currentTime, end = now + rise;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, now);
+    g.gain.exponentialRampToValueAtTime(0.3, end);
+    g.gain.setTargetAtTime(0, end, 0.25);
+    g.connect(worldMode);
+    const send = gainNode(0.7, worldModeSend);
+    g.connect(send);
+    const nodes = [g, send];
+    const sources = [55, 82.41, 110, 164.8].map((f, i) => {
+      const o = ctx.createOscillator(), og = ctx.createGain();
+      o.type = i === 0 ? 'triangle' : 'sine';
+      o.frequency.setValueAtTime(f, now);
+      o.frequency.exponentialRampToValueAtTime(f * 1.04, end); // straining upward
+      og.gain.value = [0.5, 0.35, 0.3, 0.12][i];
+      o.connect(og).connect(g);
+      nodes.push(og);
+      return o;
+    });
+    const air = ctx.createBufferSource(), bp = ctx.createBiquadFilter(), ag = ctx.createGain();
+    air.buffer = bank.breath;
+    air.loop = true;
+    bp.type = 'bandpass';
+    bp.Q.value = 0.9;
+    bp.frequency.setValueAtTime(180, now);
+    bp.frequency.exponentialRampToValueAtTime(2600, end);
+    ag.gain.value = 0.55;
+    air.connect(bp).connect(ag).connect(g);
+    nodes.push(bp, ag);
+    sources.push(air);
+    for (const s of sources) {
+      s.start(now);
+      s.stop(end + 2);
+    }
+    sources[0].onended = () => [...sources, ...nodes].forEach((n) => n.disconnect());
+  };
+  // midnight: one bell, close and vast in the dark (never hushed)
+  api.toll = () => {
+    if (bank) play(bank.events.bell[0], { gain: 0.85, rate: 0.9, send: 1.2 });
+  };
+  // a new loop begins: the night's sound comes back and the music with it
+  api.newLoop = () => music?.restart();
   api.setWading = (w) => (zone.wading = w);
   api.setVolumes = setVolumes;
   api.zone = zone;
