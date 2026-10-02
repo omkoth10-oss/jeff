@@ -32,6 +32,10 @@ export async function createWater(loaders, reflection, specDir, layout) {
     uWaterRect: { value: map.rect },
     // cold glow of the falls on their pools: x, z, radius, strength
     uFallGlow: { value: falls.map((f, i) => new THREE.Vector4(f.foot[0], f.foot[2], i === 0 ? 10 : 5, i === 0 ? 0.15 : 0.1)) },
+    // colour of the moon's glints, and the light on the water's own cool tones (body, sheen,
+    // foam): the moon's phase changes both (src/loop/moonPhases.js)
+    uMoonTint: { value: new THREE.Color(0.8, 0.88, 1.0) },
+    uWaterTint: { value: new THREE.Color(1, 1, 1) },
   };
   const riverMat = createWaterMaterial(shared, reflection, false);
   const { minX, maxX, minZ, maxZ } = RIVER_BOUNDS;
@@ -56,10 +60,10 @@ export async function createWater(loaders, reflection, specDir, layout) {
   group.add(gltf.scene);
 
   // separate from the water root: the falls show in the river's reflection
-  const waterfalls = createWaterfalls(falls, time);
+  const waterfalls = createWaterfalls(falls, time, shared.uWaterTint);
 
   // churning foam where each fall lands, spreading downstream
-  const poolFoam = createFoamMaterial(time, 'pool');
+  const poolFoam = createFoamMaterial(time, 'pool', shared.uWaterTint);
   falls.forEach((f, i) => {
     const size = i === 0 ? 26 : 12;
     const m = new THREE.Mesh(new THREE.PlaneGeometry(size, size * 1.4).rotateX(-Math.PI / 2), poolFoam);
@@ -70,10 +74,11 @@ export async function createWater(loaders, reflection, specDir, layout) {
     group.add(m);
   });
 
-  const rockFoam = createFoamMaterial(time, 'rock');
+  const rockFoam = createFoamMaterial(time, 'rock', shared.uWaterTint);
   return {
     root: group,
     falls: waterfalls.root,
+    uniforms: shared,
     update(dt) {
       time.value += dt;
     },
@@ -317,7 +322,7 @@ function createWaterMaterial(shared, reflection, ribbon) {
         uniform vec4 uWaterRect;
         uniform vec4 uFallGlow[2];
         uniform float uTime;
-        uniform vec3 uSpecDir;
+        uniform vec3 uSpecDir, uMoonTint, uWaterTint;
         varying vec3 vWW;
         varying vec4 vRefl;
         #ifdef USE_RIBBON
@@ -370,6 +375,7 @@ function createWaterMaterial(shared, reflection, ribbon) {
           vec4 g = uFallGlow[i];
           body += vec3(0.05, 0.075, 0.11) * g.w * exp(-length(p - g.xy) / g.z);
         }
+        body *= uWaterTint;
         vec3 col = body;
         #ifdef USE_REFLECTION
           // small distortion that shrinks with distance; reflections stretch vertically
@@ -383,7 +389,7 @@ function createWaterMaterial(shared, reflection, ribbon) {
           col = mix(body, refl * 0.85, clamp(F * 1.25 + 0.08, 0.0, 0.92));
         #endif
         // a faint sky sheen, so grazing water never goes dead black
-        col += vec3(0.012, 0.022, 0.045) * F;
+        col += vec3(0.012, 0.022, 0.045) * F * uWaterTint;
 
         // moon: a column of small glints toward the moon, plus a faint sheen that shows
         // the river's course from afar
@@ -397,7 +403,7 @@ function createWaterMaterial(shared, reflection, ribbon) {
         float column = exp(-az0 * 3000.0) * elev;
         float broken = smoothstep(0.6, 0.85, mix(b3.a, a3.a, wA) * 0.7 + mix(b1.a, a1.a, wA) * 0.3 + slope.y * 0.6);   // small glints, not blobs
         float nearGlints = 1.0 - smoothstep(30.0, 110.0, dist);
-        col += vec3(0.8, 0.88, 1.0) * (column * (0.03 + 0.5 * broken) + exp(-az0 * 900.0) * elev * pow(m, 900.0) * 6.0 * nearGlints + pow(m, 12.0) * 0.012);
+        col += uMoonTint * (column * (0.03 + 0.5 * broken) + exp(-az0 * 900.0) * elev * pow(m, 900.0) * 6.0 * nearGlints + pow(m, 12.0) * 0.012);
 
         #ifdef USE_FOG
           // lanterns on the banks: warm streaks on the water between the lamp and the
@@ -422,7 +428,7 @@ function createWaterMaterial(shared, reflection, ribbon) {
         float churn = smoothstep(0.25, 0.9, rapids) * smoothstep(0.55 - 0.25 * rapids, 0.8, foamF * 0.6 + foamN * 0.4 + 0.2 * rapids);
         float flecks = smoothstep(0.86, 0.93, foamF) * smoothstep(0.3, 1.0, depth) * 0.35 * (1.0 - smoothstep(20.0, 70.0, dist));
         float white = clamp(shore * 0.7 + churn * 0.7 + flecks, 0.0, 0.85) * mix(1.0, 0.35, smoothstep(60.0, 220.0, dist));
-        col = mix(col, vec3(0.34, 0.39, 0.47), white);
+        col = mix(col, vec3(0.34, 0.39, 0.47) * uWaterTint, white);
 
         // see into the shallows (the bed shows), opaque in the channel, soft at the bank
         float alpha = clamp(F + 1.0 - exp(-depth * 3.0), 0.0, 1.0) * smoothstep(0.0, 0.1, depth);
@@ -443,19 +449,21 @@ function createWaterMaterial(shared, reflection, ribbon) {
 // 'pool': churning foam where a fall lands, pushed outward and trailing downstream.
 // 'rock': a collar around a boulder and a V-shaped wake behind it (the quad's +z runs
 // downstream, the rock sits near its upstream end).
-function createFoamMaterial(time, kind) {
+function createFoamMaterial(time, kind, tint) {
   const mat = new THREE.MeshBasicMaterial({ color: 0x8a98b2, transparent: true, depthWrite: false });
   mat.onBeforeCompile = (shader) => {
     shader.uniforms.uTime = time;
+    shader.uniforms.uWaterTint = tint; // the moonlight's colour (the moon's phase)
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', '#include <common>\nvarying vec2 vFoamUv;')
       .replace('#include <uv_vertex>', '#include <uv_vertex>\nvFoamUv = uv;');
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', `#include <common>\nuniform float uTime;\nvarying vec2 vFoamUv;\n${noiseGLSL}`)
+      .replace('#include <common>', `#include <common>\nuniform float uTime;\nuniform vec3 uWaterTint;\nvarying vec2 vFoamUv;\n${noiseGLSL}`)
       .replace(
         '#include <color_fragment>',
         kind === 'pool'
           ? `#include <color_fragment>
+          diffuseColor.rgb *= uWaterTint;
           {
             vec2 c = (vFoamUv - vec2(0.5, 0.62)) * vec2(2.0, 2.8);   // the fall lands toward the upstream end
             float r = length(c);
@@ -467,6 +475,7 @@ function createFoamMaterial(time, kind) {
             diffuseColor.rgb *= 0.85 + 0.3 * smoothstep(0.4, 0.0, r);
           }`
           : `#include <color_fragment>
+          diffuseColor.rgb *= uWaterTint;
           {
             vec2 q = vFoamUv * 2.0 - 1.0;              // x across the flow
             float v = 1.0 - vFoamUv.y;                 // 0 upstream edge .. 1 downstream end

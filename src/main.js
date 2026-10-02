@@ -25,6 +25,7 @@ import { createStreetProps } from './world/streetProps.js';
 import { createTitle, loadSettings } from './ui/title.js';
 import { createSoundscape } from './audio/soundscape.js';
 import { createTour } from './ui/tour.js';
+import { createTimeLoop } from './loop/timeLoop.js';
 
 const params = new URLSearchParams(location.search);
 const UP = new THREE.Vector3(0, 1, 0);
@@ -110,7 +111,8 @@ function add(object) {
 // with lit edges, cliffs and roofs facing right catch the light, shadows fall to the left
 const keyDir = new THREE.Vector3().setFromSphericalCoords(1, THREE.MathUtils.degToRad(61), THREE.MathUtils.degToRad(97));
 // sky fill: shadows stay deep navy but hold detail instead of crushing to black
-scene.add(new THREE.HemisphereLight(0x2a4866, 0x080c12, 0.45));
+const hemi = new THREE.HemisphereLight(0x2a4866, 0x080c12, 0.45);
+scene.add(hemi);
 const moonLight = new THREE.DirectionalLight(0xa6c2f0, 1.9);
 moonLight.position.copy(NINJA.position).addScaledVector(keyDir, 500);
 moonLight.target.position.copy(NINJA.position);
@@ -278,13 +280,14 @@ Promise.all([terrainReady, waterReady]).then(async ([terrain, water]) => {
 // (step 6) switches to the collision mesh.
 const downRay = new THREE.Raycaster(new THREE.Vector3(), new THREE.Vector3(0, -1, 0), 0, 2000);
 let terrainRoot = null;
-terrainReady.then((t) => {
+const mistReady = terrainReady.then((t) => {
   terrainRoot = t.root;
   const mist = createMist(MIST_BANKS, groundHeight, moonDir, fog.uniforms);
   scene.add(mist.mesh);
   noReflect.push(mist.mesh); // the water already sits under the mist; reflected, it doubled up
   updaters.push(mist.update);
   if (window.app) window.app.mist = mist;
+  return mist;
 });
 function groundHeight(x, z) {
   if (!terrainRoot) return 0;
@@ -342,6 +345,7 @@ Promise.all([terrainReady, layoutReady, glowsReady]).then(([terrain, layout]) =>
 // Loaded as its own chunk, in parallel with the world (the physics engine is ~1.7 MB),
 // so the scene draws while it arrives.
 let game = null;
+let timeLoop = null; // the hour that repeats (src/loop), once the game is ready
 const gameModule = import('./game/game.js');
 Promise.all([
   gameModule,
@@ -363,12 +367,21 @@ Promise.all([
   applySettings(title?.settings);
   audio.attachWorld({ layout, village: village.data, torches: glows.colliders, trunks: rocks.trunks });
   game.onEvent = audio.handle;
-  // a few frames so every shader is compiled before the title lets anyone in
+  timeLoop = createTimeLoop({
+    scene, camera, game, audio,
+    look: { moon, moonLight, rimLight, hemi, sky, fog, mist: await mistReady, water, post },
+    debug: import.meta.env.DEV || params.has('debug'),
+  });
+  if (window.app) window.app.loop = timeLoop;
+  // a few frames so every shader is compiled before the title lets anyone in (the
+  // midnight pulse's too, drawn at zero strength)
+  timeLoop.pulse.warm(true);
   for (let i = 0; i < 3; i++) {
     update(1 / 60);
     renderReflection();
     post.composer.render(1 / 60);
   }
+  timeLoop.pulse.warm(false);
   title?.ready();
 });
 if (title) {
@@ -401,6 +414,12 @@ function update(dt) {
   // the game moves and poses the player and places the camera before anything reads
   // the camera
   if (game) game.update(dt, { cameraFree: !!fly?.active || !!tour?.active });
+  if (timeLoop) {
+    // the hour runs while someone is playing: not under the title, on the flyover or paused
+    const shown = game.state.started && !title?.covering && !tour?.active;
+    const playing = (game.input.state.locked || game.state.driving || !!fly?.active) && shown;
+    timeLoop.update(dt, { live: playing, hud: shown });
+  }
   if (tour?.active) title.place(tour.update(dt));
   for (const u of updaters) u(dt, camera);
   sky.uniforms.uTime.value += dt;

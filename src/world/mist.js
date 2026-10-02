@@ -57,7 +57,9 @@ function bakeNoise() {
   return tex;
 }
 
-// banks: [x, z, width, height, alpha, kind]; kind 0 = drifting bank, 1 = waterfall spray.
+// banks: [x, z, width, height, alpha, kind]; kind 0 = drifting bank, 1 = waterfall spray,
+// 2 = mist on the river, 3 = mist on the river that only rises with the Silver Mist
+// (kinds 2 and 3 grow with uRiverMist, 0..1, set by the moon's phase: src/loop/moonPhases.js).
 // y is looked up from the ground (minus a little, so the faded foot sits in it).
 export function createMist(banks, groundHeight, moonDir, fogUniforms) {
   const geo = new THREE.InstancedBufferGeometry();
@@ -95,6 +97,7 @@ export function createMist(banks, groundHeight, moonDir, fogUniforms) {
     uColor: { value: new THREE.Color(0.07, 0.12, 0.21) },
     uGlow: { value: new THREE.Color(0.08, 0.13, 0.21) },
     uSpray: { value: new THREE.Color(0.17, 0.24, 0.36) },
+    uRiverMist: { value: 0 },
     uFogLight: fogUniforms.uFogLight,
     uFogLightRect: fogUniforms.uFogLightRect,
   };
@@ -103,15 +106,23 @@ export function createMist(banks, groundHeight, moonDir, fogUniforms) {
     vertexShader: /* glsl */ `
       attribute vec4 iPos;
       attribute vec4 iSize;
+      uniform float uRiverMist;
       varying vec2 vUv;
       varying vec4 vSize;
       varying float vSeed;
       varying vec3 vWorld;
       void main() {
+        // river mist that only exists in the Silver Mist: off the screen until it rises
+        if (iSize.w > 2.5 && uRiverMist < 0.001) {
+          gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+          return;
+        }
+        // the river's mist swells, wider and taller, as it thickens
+        float swell = step(1.5, iSize.w) * uRiverMist;
         vec3 toCam = cameraPosition - iPos.xyz;
         vec3 flatDir = normalize(vec3(toCam.x, 0.0, toCam.z) + vec3(1e-4, 0.0, 0.0));
         vec3 right = normalize(cross(vec3(0.0, 1.0, 0.0), flatDir));
-        vec3 wp = iPos.xyz + right * position.x * iSize.x + vec3(0.0, position.y * iSize.y, 0.0);
+        vec3 wp = iPos.xyz + right * position.x * iSize.x * (1.0 + 0.25 * swell) + vec3(0.0, position.y * iSize.y * (1.0 + 0.7 * swell), 0.0);
         // pulled a little toward the camera so the sheet clears the slope it stands on
         wp += flatDir * min(iSize.x * 0.15, 12.0);
         vUv = vec2(position.x + 0.5, position.y);
@@ -124,6 +135,7 @@ export function createMist(banks, groundHeight, moonDir, fogUniforms) {
       uniform sampler2D uNoise;
       uniform float uTime;
       uniform vec3 uMoonDir, uColor, uGlow, uSpray;
+      uniform float uRiverMist;
       uniform sampler2D uFogLight;
       uniform vec4 uFogLightRect;
       varying vec2 vUv;
@@ -131,7 +143,8 @@ export function createMist(banks, groundHeight, moonDir, fogUniforms) {
       varying float vSeed;
       varying vec3 vWorld;
       void main() {
-        float spray = step(0.5, vSize.w);
+        float spray = step(0.5, vSize.w) * step(vSize.w, 1.5);
+        float river = step(1.5, vSize.w), risen = step(2.5, vSize.w);
         // metre-scaled noise coordinates: sheets drift sideways, spray rolls upward
         vec2 m = vec2(vUv.x * vSize.x, vUv.y * vSize.y);
         vec2 drift = spray > 0.5 ? vec2(0.0, -uTime * 2.2) : vec2(uTime * 0.6, 0.0);
@@ -146,6 +159,7 @@ export function createMist(banks, groundHeight, moonDir, fogUniforms) {
         // a soft veil whose density drifts, not smoke with holes in it
         float a = vSize.z * ex * ey * (0.3 + 0.7 * smoothstep(0.15, 0.7, n));
         a *= mix(1.0, 1.0 - 0.6 * vUv.y, spray);             // spray thins out as it rises
+        a *= mix(1.0, mix(1.0 + 1.3 * uRiverMist, uRiverMist, risen), river);   // the river's mist thickens
 
         vec3 fr = vWorld - cameraPosition;
         float d = length(fr);

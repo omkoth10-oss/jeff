@@ -1,5 +1,6 @@
 // Where the mist hangs: [x, z, width, height, alpha, kind, lift]
-// kind 0 = drifting bank, 1 = waterfall spray. Heights come from the terrain.
+// kind 0 = drifting bank, 1 = waterfall spray, 2 = on the river (thickens in the Silver
+// Mist), 3 = on the river, only in the Silver Mist. Heights come from the terrain.
 export const MIST_BANKS = [
   // spray rolling up from the foot of the big waterfall, and drifting downstream
   [-24, -275, 40, 32, 0.7, 1], [-39, -270, 26, 20, 0.5, 1], [-9, -268, 28, 20, 0.5, 1],
@@ -15,12 +16,17 @@ export const MIST_BANKS = [
   [-35, -240, 50, 12, 0.32], [45, -262, 60, 12, 0.32], [72, -190, 50, 11, 0.3], [-46, -176, 44, 11, 0.3],
   [62, -142, 40, 10, 0.26], [10, -286, 70, 14, 0.36], [100, -215, 50, 12, 0.3],
   // low mist lying on the river through the village, thin enough to see the water
-  [-16, -238, 44, 7, 0.36], [-8, -196, 46, 7, 0.32], [2, -165, 40, 6, 0.26], [22, -128, 50, 7, 0.28], [29, -92, 46, 7, 0.28],
-  [30, -66, 40, 6, 0.26], [34, -40, 50, 8, 0.32], [60, 4, 60, 9, 0.34],
+  [-16, -238, 44, 7, 0.36, 2], [-8, -196, 46, 7, 0.32, 2], [2, -165, 40, 6, 0.26, 2], [22, -128, 50, 7, 0.28, 2], [29, -92, 46, 7, 0.28, 2],
+  [30, -66, 40, 6, 0.26, 2], [34, -40, 50, 8, 0.32], [60, 4, 60, 9, 0.34],
+  // the Silver Mist (11:20): banks that rise along the river through the village (not
+  // right under the ledge, where they'd be seen from above as sheets)
+  [-21, -258, 50, 11, 0.42, 3], [-13, -236, 48, 10, 0.4, 3], [-14, -214, 52, 11, 0.4, 3], [-6, -194, 50, 10, 0.42, 3],
+  [2, -172, 52, 11, 0.42, 3], [11, -152, 54, 11, 0.42, 3], [19, -130, 56, 12, 0.42, 3], [24, -108, 58, 12, 0.4, 3],
+  [28, -86, 56, 11, 0.38, 3],
   // drifting off the main waterfall across the upper village
   [-45, -262, 50, 16, 0.4], [2, -262, 50, 14, 0.38],
   // low mist on the river
-  [15, -205, 70, 9, 0.25], [70, -40, 60, 8, 0.2],
+  [15, -205, 70, 9, 0.25, 2], [70, -40, 60, 8, 0.2],
   // folds of the ridges either side of the valley
   [175, -225, 90, 30, 0.45], [150, -140, 80, 22, 0.35], [195, -335, 110, 32, 0.5],
   [240, -60, 120, 30, 0.5], [265, -200, 140, 36, 0.5], [300, -350, 160, 40, 0.55],

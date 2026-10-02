@@ -23,6 +23,7 @@ const PLAY = { shoulder: 0.72, distance: 3.6, height: 1.55 };
 const PITCH_MIN = THREE.MathUtils.degToRad(-72);
 const PITCH_MAX = THREE.MathUtils.degToRad(38);
 const SENSITIVITY = 0.0022; // rad per pixel
+const BLEND_TIME = 1.6; // seconds to ease from the opening shot to the gameplay framing
 const PROBE = 0.22; // camera sphere radius
 
 export function createCameraRig(camera, physics, { yaw, pitch }) {
@@ -61,8 +62,17 @@ export function createCameraRig(camera, physics, { yaw, pitch }) {
     activate() {
       state.active = true;
     },
+    // a new loop: back to the opening shot, held for `hold` seconds before easing into the
+    // gameplay framing again
+    reset({ yaw: y, pitch: p, hold = 0 }) {
+      state.yaw = y;
+      state.pitch = p;
+      state.blend = -hold / BLEND_TIME;
+      state.pull = 1;
+      havePivot = false;
+    },
     update(dt, feet) {
-      if (state.active) state.blend = Math.min(1, state.blend + dt / 1.6);
+      if (state.active) state.blend = Math.min(1, state.blend + dt / BLEND_TIME);
       const b = THREE.MathUtils.smootherstep(state.blend, 0, 1);
       const shoulder = THREE.MathUtils.lerp(OPENING.shoulder, PLAY.shoulder, b);
       const distance = THREE.MathUtils.lerp(OPENING.distance, PLAY.distance, b);

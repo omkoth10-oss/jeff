@@ -13,6 +13,7 @@ export function createSky(moonDir) {
     uHalo: { value: new THREE.Color(0.12, 0.18, 0.36) },
     uCloudDark: { value: new THREE.Color(0.01, 0.018, 0.038) },
     uCloudLit: { value: new THREE.Color(0.11, 0.16, 0.26) },
+    uStars: { value: 1 }, // brighter as the moon goes dark at the end of the hour (src/loop)
   };
   const material = new THREE.ShaderMaterial({
     uniforms,
@@ -26,7 +27,7 @@ export function createSky(moonDir) {
       }`,
     fragmentShader: /* glsl */ `
       uniform vec3 uMoonDir, uHorizon, uZenith, uHalo, uCloudDark, uCloudLit;
-      uniform float uTime;
+      uniform float uTime, uStars;
       varying vec3 vDir;
       ${noiseGLSL}
       void main() {
@@ -58,7 +59,7 @@ export function createSky(moonDir) {
         // thin cloud edges catch the moon: a bright silver rim near it, a faint one everywhere
         vec3 cloud = mix(uCloudDark, uCloudLit, 0.08 + 0.92 * pow(m, 12.0)) + uCloudLit * thin * (pow(m, 6.0) * 3.0 + 0.05);
         col = mix(col + uHalo * halo, cloud + uHalo * halo * 0.4, cover * 0.92);
-        col += vec3(0.85, 0.9, 1.0) * star * (1.0 - cover);
+        col += vec3(0.85, 0.9, 1.0) * star * uStars * (1.0 - cover);
 
         gl_FragColor = vec4(col, 1.0);
         #include <tonemapping_fragment>
