@@ -3,27 +3,44 @@ import { noiseGLSL } from '../shaders/noise.js';
 import { SHRINE_PLAZA } from '../config.js';
 
 // The midnight pulse. At 12:00 a pillar of light rises from the shrine plaza into the
-// sky, light floods the valley and a wall of it sweeps outward; the screen goes white,
-// then black; a single bell rings in the dark; the world resets and the next loop fades
-// in on the cliff. About thirteen seconds, timed in real seconds (the debug time scale
-// doesn't hurry it).
+// sky, light floods the valley and a wall of it sweeps outward; the screen goes white and
+// holds there while a single bell rings; the world resets behind the white, and the next
+// loop fades in out of it on the cliff, Ren rising sharply as if gasping awake.
+//
+// The first midnight is the full moment (about eleven seconds: the camera turns to the
+// shrine, the white holds through the bell). Every one after is quick (FAST, about four
+// seconds): the player has seen it, and the loop is the game. Real seconds (the debug
+// time scale doesn't hurry it).
 //
 // The pillar and the wave are two additive meshes drawn only while the pulse plays. The
 // light on the valley is not a real light (adding one would recompile every material):
 // it is an overlay on the moon's look (moonPhases.apply) that drives the existing
-// lights, sky, fog and mist toward white-hot. The white and the black are a DOM veil.
+// lights, sky, fog and mist toward white-hot. The white is the screen's veil (screen.js).
 
 // seconds from midnight
-const T = {
+const FULL = {
   turn: 2.6,            // the camera turns to the shrine
   rise: [0.5, 2.1],     // the pillar grows from the plaza into the sky
   flash: [1.4, 4.6],    // light floods the valley
   wave: [2.0, 5.0],     // a wall of light sweeps out across the valley
   white: [3.3, 4.9],    // the screen fades to white
-  black: [5.4, 6.9],    // white to black
-  reset: 6.9,           // in the dark: back to 11:00, the bell rings
-  fadeIn: [10.2, 13.0], // the next loop fades in on the cliff
-  control: 11.0,        // the player has control again
+  reset: 5.0,           // behind the white: back to 11:00 on the cliff
+  bell: 5.3,            // one bell, in the white
+  fadeIn: [8.6, 10.9],  // out of the white, onto the cliff
+  wake: [9.25, 9.65],   // Ren gasps awake
+  control: 9.9,         // the player has control again
+};
+const FAST = {
+  turn: 0,
+  rise: [0, 0.45],
+  flash: [0.15, 1.3],
+  wave: [0.25, 1.45],
+  white: [0.55, 1.45],
+  reset: 1.5,
+  bell: 1.6,
+  fadeIn: [2.5, 4.3],
+  wake: [2.9, 3.25],
+  control: 3.4,
 };
 const PILLAR_HEIGHT = 900, WAVE_REACH = 240;
 
@@ -41,7 +58,7 @@ const FLASH = {
 const span = (t, [a, b]) => THREE.MathUtils.clamp((t - a) / (b - a), 0, 1);
 const smooth = (x) => x * x * (3 - 2 * x);
 
-export function createPulse({ phases }) {
+export function createPulse({ phases, screen }) {
   const time = { value: 0 };
   const root = new THREE.Group();
   root.name = 'MidnightPulse';
@@ -66,21 +83,9 @@ export function createPulse({ phases }) {
   waveMesh.frustumCulled = false;
   root.add(waveMesh);
 
-  // the veil over everything but the title screen: white, then black
-  const veil = document.createElement('div');
-  veil.id = 'loop-veil';
-  Object.assign(veil.style, { position: 'fixed', inset: '0', zIndex: '40', pointerEvents: 'none', opacity: '0', background: '#fff', display: 'none' });
-  document.body.appendChild(veil);
-
   const flash = { values: phases.prepare(FLASH), k: 0 };
   const quiet = { values: phases.prepare({ hush: 1 }), k: 0 };
-  let t = 0, active = false, fired = {}, handlers = {};
-
-  function setVeil(color, opacity) {
-    veil.style.display = opacity > 0.001 ? 'block' : 'none';
-    veil.style.background = color;
-    veil.style.opacity = opacity.toFixed(3);
-  }
+  let t = 0, T = FULL, active = false, fired = {}, handlers = {};
   const once = (name, at, fn) => {
     if (t >= at && !fired[name]) {
       fired[name] = true;
@@ -91,7 +96,7 @@ export function createPulse({ phases }) {
   return {
     root,
     // the look overlays for moonPhases.apply (flash toward white; the hush held through
-    // the dark until the new loop fades in)
+    // the white until the new loop fades in)
     overlays: [flash, quiet],
     get active() {
       return active;
@@ -103,9 +108,11 @@ export function createPulse({ phases }) {
     warm(on) {
       root.visible = on;
     },
-    // h: { begin, turn(k, dt), reset, fadeIn, control }
-    start(h) {
+    // h: { begin(T), turn(dt), reset(T), bell, fadeIn, wake(k), control, end };
+    // fast: the short version, for every midnight after the first
+    start(h, { fast = false } = {}) {
       handlers = h;
+      T = fast ? FAST : FULL;
       active = true;
       t = 0;
       fired = {};
@@ -137,25 +144,21 @@ export function createPulse({ phases }) {
       flash.k = before ? span(t, T.flash) : 0;
       quiet.k = t < T.fadeIn[0] ? (t >= T.reset ? 1 : 0) : 1 - span(t, T.fadeIn);
 
-      // white, then black, then the new loop
-      if (t < T.black[0]) setVeil('#fff', smooth(span(t, T.white)));
-      else if (t < T.fadeIn[0]) {
-        const b = smooth(span(t, T.black));
-        // through grey: white darkening to black (not a crossfade, which would bloom)
-        const v = Math.round(255 * (1 - b));
-        setVeil(`rgb(${v},${v},${Math.round(v * 0.985)})`, 1);
-      } else setVeil('#000', 1 - smooth(span(t, T.fadeIn)));
+      // white, held through the bell, then the new loop out of it
+      screen.veil('#fff', t < T.fadeIn[0] ? smooth(span(t, T.white)) : 1 - smooth(span(t, T.fadeIn)));
 
       once('reset', T.reset, () => {
         root.visible = false;
         handlers.reset?.(T);
       });
+      once('bell', T.bell, () => handlers.bell?.());
       once('fadeIn', T.fadeIn[0], () => handlers.fadeIn?.());
+      if (t >= T.reset) handlers.wake?.(span(t, T.wake));
       once('control', T.control, () => handlers.control?.());
       if (t >= T.fadeIn[1]) {
         active = false;
         flash.k = quiet.k = 0;
-        setVeil('#000', 0);
+        screen.veil('#fff', 0);
         handlers.end?.();
       }
     },

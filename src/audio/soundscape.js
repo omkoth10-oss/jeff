@@ -16,7 +16,9 @@ import { SAMPLES } from './samples.js';
 //   music     generative, sparse (music.js)
 //   loop      the time loop (src/loop): the end of the hour hushes the ambience and the
 //             music (footsteps stay), a swell builds under the midnight pulse, and one
-//             bell rings in the dark before the next loop
+//             bell rings in the white before the next loop; Ren gasps awake. The opening:
+//             the night fades in over black, a distant bell, a whisper (a placeholder,
+//             made from breath noise)
 //
 // Where the listener is decides the mix, re-evaluated ten times a second and always
 // eased (setTargetAtTime, seconds), never switched: how many houses are near, how far
@@ -439,16 +441,64 @@ export function createSoundscape({ settings = {} } = {}) {
     music.update();
   };
   // ---- the time loop (src/loop)
-  let hushLevel = 0;
+  let hushLevel = 0, musicHushLevel = 0;
   function applyHush(now = ctx.currentTime, tau = 0.4) {
-    const k = mode === 'game' ? 1 - hushLevel : 1;
-    for (const g of [ambience, ambienceSend, musicBus, musicBusSend]) g.gain.setTargetAtTime(k, now, tau);
+    const game = mode === 'game';
+    for (const g of [ambience, ambienceSend]) g.gain.setTargetAtTime(game ? 1 - hushLevel : 1, now, tau);
+    for (const g of [musicBus, musicBusSend]) g.gain.setTargetAtTime(game ? 1 - musicHushLevel : 1, now, tau);
   }
-  // 0 = the night as usual .. 1 = silence (music and ambience; the player is still heard)
-  api.hush = (level) => {
-    if (Math.abs(level - hushLevel) < 0.004 && (level > 0 || hushLevel === 0)) return;
+  // 0 = the night as usual .. 1 = silence, for the ambience and the music (the player is
+  // still heard)
+  api.hush = (level, music = level) => {
+    const same = (a, b) => Math.abs(a - b) < 0.004 && (a > 0 || b === 0);
+    if (same(level, hushLevel) && same(music, musicHushLevel)) return;
     hushLevel = level;
+    musicHushLevel = music;
     applyHush();
+  };
+  // shaped breath noise: [time, gain] envelope points through a band-pass whose centre
+  // follows [time, Hz] points; the voice's raw material for the whisper and the gasp
+  function breath(at, env, band, { q = 4, gain = 1, send = 0.4, pan = 0 } = {}) {
+    const s = ctx.createBufferSource(), bp = ctx.createBiquadFilter(), g = ctx.createGain(), sp = ctx.createStereoPanner(), sg = ctx.createGain();
+    s.buffer = bank.breath;
+    s.loop = true;
+    bp.type = 'bandpass';
+    bp.Q.value = q;
+    band.forEach(([t, f], i) => (i ? bp.frequency.linearRampToValueAtTime(f, at + t) : bp.frequency.setValueAtTime(f, at + t)));
+    g.gain.setValueAtTime(0, at);
+    for (const [t, v] of env) g.gain.linearRampToValueAtTime(v * gain, at + t);
+    sp.pan.value = pan;
+    sg.gain.value = send;
+    s.connect(bp).connect(g).connect(sp).connect(worldMode);
+    sp.connect(sg).connect(worldModeSend);
+    const end = at + env[env.length - 1][0];
+    s.start(at, Math.random());
+    s.stop(end + 0.05);
+    s.onended = () => [bp, g, sp, sg].forEach((n) => n.disconnect());
+  }
+  // "Again…": two whispered syllables, from nowhere in particular (mostly reverb)
+  api.whisper = () => {
+    if (!bank) return;
+    const at = ctx.currentTime + 0.05;
+    for (const [band, q, gain] of [[[[0, 650], [0.3, 600]], 5, 0.5], [[[0, 1250], [0.3, 1150]], 7, 0.32]]) {
+      breath(at, [[0.07, 1], [0.2, 0.7], [0.3, 0]], band, { q, gain, send: 1.4, pan: -0.15 });
+    }
+    const g = at + 0.36; // "-gain": the vowel gliding up, the n fading
+    for (const [band, q, gain] of [[[[0, 520], [0.35, 380], [0.7, 300]], 5, 0.5], [[[0, 1750], [0.35, 2250], [0.7, 2100]], 8, 0.34]]) {
+      breath(g, [[0.04, 0.6], [0.12, 1], [0.42, 0.75], [0.8, 0]], band, { q, gain, send: 1.4, pan: 0.12 });
+    }
+    breath(at, [[0.1, 0.5], [0.9, 0.35], [1.25, 0]], [[0, 5200]], { q: 0.8, gain: 0.07, send: 1.4 }); // breathiness
+  };
+  // waking with a sharp breath in
+  api.gasp = () => {
+    if (!bank) return;
+    const at = ctx.currentTime + 0.02;
+    breath(at, [[0.09, 1], [0.24, 0.55], [0.5, 0]], [[0, 850], [0.3, 2300]], { q: 1.6, gain: 0.55, send: 0.3 });
+    breath(at, [[0.08, 1], [0.4, 0]], [[0, 4800]], { q: 0.9, gain: 0.12, send: 0.3 });
+  };
+  // the opening: one bell, far off across the valley (the castle)
+  api.distantBell = () => {
+    if (bank) play(bank.events.bell[0], { pos: [112, 36, -282], gain: 0.75, send: 0.9 });
   };
   // the midnight pulse building: a low swell and air rising through a widening band,
   // for `rise` seconds, then cut off by the white

@@ -332,6 +332,9 @@ export function createProceduralAnimator({ root, model, ground }) {
       // feet leave the ground
       const crouch = p.crouch ?? 0;
       const squat = crouch > 0 ? Math.sin(Math.PI * Math.pow(crouch, 1.15)) : 0;
+      // waking on the cliff at the start of a loop (src/loop): hunched over, head bowed,
+      // arms loose; as it lets go the lean's spring snaps him upright
+      const slump = p.slump ?? 0;
       const landC = sp.land.step(0, dt); // negative when compressed
       // lean: forward with speed and sprinting, hard into acceleration, back when braking,
       // into the climb on stairs and slopes
@@ -340,7 +343,7 @@ export function createProceduralAnimator({ root, model, ground }) {
       // ankles, not after it)
       const drive = sp.drive.step(clamp((p.drive ?? 0) * 0.15, -0.24, 0.45) * (air.on ? 0 : 1), dt);
       const leanT = (3 + lerp(3.5, 11, r) + 4 * sprint) * DEG
-        + 38 * DEG * squat + (air.on ? (p.vy > 0 ? 6 : -2 * smooth(p.fallSpeed, 5, 9)) * DEG : 0) + wade * 8 * DEG
+        + 38 * DEG * squat + 52 * DEG * slump + (air.on ? (p.vy > 0 ? 6 : -2 * smooth(p.fallSpeed, 5, 9)) * DEG : 0) + wade * 8 * DEG
         + (moving ? (grade > 0 ? grade * 0.4 : grade * 0.08) : 0);
       const lean = sp.lean.step(leanT, dt) + drive + clamp(-landC * 2.2, 0, 0.9);
       const pelvisTilt = lean * 0.15 + r * 1 * DEG;
@@ -389,7 +392,7 @@ export function createProceduralAnimator({ root, model, ground }) {
       if (!air.on && moving) hipY = lerp(hipY, pos.y + hipRestY - 0.05, smooth(Math.abs(grade), 0.12, 0.45) * 0.7);
       hipY -= wade * 0.05;
       // (the jump's crouch and landings are quick: applied directly, not smoothed)
-      const sm = sp.hipY.step(hipY - pos.y, dt) + pos.y - 0.28 * squat + landC;
+      const sm = sp.hipY.step(hipY - pos.y, dt) + pos.y - 0.28 * squat - 0.3 * slump + landC;
       // hard limit: planted legs must reach their ankles, a swinging leg as it comes down
       let limit = Infinity;
       if (!air.on) {
@@ -430,7 +433,7 @@ export function createProceduralAnimator({ root, model, ground }) {
       const headLead = clamp(wrap(body.heading - p.facing) * smooth(v, 0.3, 1) * 0.6 + body.turn * 0.12, -0.6, 0.6);
       const headYaw = sp.headYaw.step(clamp(diff * 0.45, -35 * DEG, 35 * DEG) * lookW + glance + headLead, dt);
       const headPitch = sp.headPitch.step((view ? clamp((-view.pitch - 0.2) * 0.35, -12 * DEG, 14 * DEG) : 0) + idle * 3 * DEG * Math.sin(it * 0.23), dt);
-      const qHead = q1.copy(axisQ(UP, headYaw, q1)).multiply(axisQ(L, headPitch + lean * 0.3 + breath * bAmp * 0.3 + clamp(-landC, 0, 0.3) * 0.4, q2));
+      const qHead = q1.copy(axisQ(UP, headYaw, q1)).multiply(axisQ(L, headPitch + lean * 0.3 + 26 * DEG * slump + breath * bAmp * 0.3 + clamp(-landC, 0, 0.3) * 0.4, q2));
       const qNeck = q2.copy(qHead).multiply(new THREE.Quaternion().copy(qChest).invert());
       const part = new THREE.Quaternion();
       rig.rotateWorld(B.neck1, frac(qNeck, 0.3, part));
@@ -520,6 +523,11 @@ export function createProceduralAnimator({ root, model, ground }) {
         flexR = lerp(flexR, lerp(0.45, 0.85, deep), k);
         abdT = lerp(abdT, lerp(0.45, 0.3, deep), k);
         elbowT = lerp(elbowT, lerp(0.6, 0.25, deep), k);
+      }
+      if (slump > 0) {
+        flexL = lerp(flexL, 0.32, slump);
+        flexR = lerp(flexR, 0.22, slump);
+        elbowT = lerp(elbowT, 0.55, slump);
       }
       // (quicker arms for the jump's drive)
       sp.armL.omega = sp.armR.omega = crouch > 0 || air.on ? 20 : 13;

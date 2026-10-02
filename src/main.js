@@ -40,6 +40,8 @@ const title = params.has('notitle') ? null : createTitle({
   onStart() {
     canvas.requestPointerLock?.()?.catch?.(() => {}); // (inside the click: the game starts on pointer lock)
     title.hide('live');
+    // the first START: the opening cutscene (the title dissolves into its black)
+    if (!game.state.started) timeLoop.playOpening();
   },
   onExplore() {
     if (!game) return;

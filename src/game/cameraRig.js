@@ -30,7 +30,10 @@ export function createCameraRig(camera, physics, { yaw, pitch }) {
   const { RAPIER, world } = physics;
   const probe = new RAPIER.Ball(PROBE);
   const rot = new RAPIER.Quaternion(0, 0, 0, 1);
-  const state = { yaw, pitch, blend: 0, pull: 1, active: false, sensitivity: 1, invertY: false };
+  // dolly: metres further back than the framing, along the ground (the camera keeps its
+  // height), and dollySide times that to the right, for camera moves; lift: metres up or
+  // down, after the smoothing (a sharp move stays sharp)
+  const state = { yaw, pitch, blend: 0, blendTime: BLEND_TIME, pull: 1, active: false, sensitivity: 1, invertY: false, dolly: 0, dollySide: 0, lift: 0 };
   const pivot = new THREE.Vector3();
   const smoothPivot = new THREE.Vector3();
   let havePivot = false;
@@ -62,17 +65,19 @@ export function createCameraRig(camera, physics, { yaw, pitch }) {
     activate() {
       state.active = true;
     },
-    // a new loop: back to the opening shot, held for `hold` seconds before easing into the
-    // gameplay framing again
-    reset({ yaw: y, pitch: p, hold = 0 }) {
+    // back to the opening shot (a new loop, the opening cutscene), held for `hold` seconds
+    // before easing into the gameplay framing over `ease` seconds
+    reset({ yaw: y, pitch: p, hold = 0, ease = BLEND_TIME }) {
       state.yaw = y;
       state.pitch = p;
-      state.blend = -hold / BLEND_TIME;
+      state.blendTime = ease;
+      state.blend = -hold / ease;
       state.pull = 1;
+      state.dolly = state.lift = 0;
       havePivot = false;
     },
     update(dt, feet) {
-      if (state.active) state.blend = Math.min(1, state.blend + dt / BLEND_TIME);
+      if (state.active) state.blend = Math.min(1, state.blend + dt / state.blendTime);
       const b = THREE.MathUtils.smootherstep(state.blend, 0, 1);
       const shoulder = THREE.MathUtils.lerp(OPENING.shoulder, PLAY.shoulder, b);
       const distance = THREE.MathUtils.lerp(OPENING.distance, PLAY.distance, b);
@@ -92,6 +97,9 @@ export function createCameraRig(camera, physics, { yaw, pitch }) {
       q.setFromEuler(e);
       shoulderPt.set(shoulder, 0, 0).applyQuaternion(q).add(smoothPivot);
       camPt.set(shoulder, 0, distance).applyQuaternion(q).add(smoothPivot);
+      const sy = Math.sin(state.yaw), cy = Math.cos(state.yaw);
+      camPt.x += (sy + cy * state.dollySide) * state.dolly;
+      camPt.z += (cy - sy * state.dollySide) * state.dolly;
 
       // obstacle avoidance: head -> shoulder -> camera
       const s1 = sweep(smoothPivot, shoulderPt);
@@ -101,6 +109,7 @@ export function createCameraRig(camera, physics, { yaw, pitch }) {
       // in at once, out slowly
       state.pull = want < state.pull ? want : state.pull + (want - state.pull) * (1 - Math.exp(-dt * 3.5));
       camera.position.lerpVectors(shoulderPt, camPt, state.pull);
+      camera.position.y += state.lift;
       camera.quaternion.copy(q);
       camera.updateMatrixWorld();
     },
