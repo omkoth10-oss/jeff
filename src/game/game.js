@@ -31,8 +31,9 @@ export async function createGame(o) {
   const animator = createProceduralAnimator({ root: ninja, model: ninjaModel, ground: groundProbe(physics) });
   if (animator.rig.missing.length) console.warn('[game] missing bones', animator.rig.missing);
 
-  // driving: the walk test is in control; cinematic: the time loop holds the controls (midnight)
-  const state = { started: false, paused: false, driving: false, cinematic: false };
+  // driving: the walk test is in control; cinematic: the time loop holds the controls (the
+  // opening, midnight); wake: 1 = slumped on the ledge at the start of a loop .. 0 = standing
+  const state = { started: false, paused: false, driving: false, cinematic: false, wake: 0 };
   const start = () => {
     if (state.started) return;
     state.started = true;
@@ -41,7 +42,7 @@ export async function createGame(o) {
   };
   document.addEventListener('pointerlockchange', () => {
     if (input.state.locked) start();
-    hud.locked(input.state.locked);
+    if (!state.cinematic) hud.locked(input.state.locked); // (no prompts over a cutscene)
   });
 
   function update(dt, { cameraFree = false } = {}) {
@@ -63,6 +64,7 @@ export async function createGame(o) {
     const p = player.state;
     ninja.position.copy(p.feet);
     ninja.rotation.y = p.facing;
+    p.slump = state.wake;
     animator.update(dt, p, { yaw: rig.yaw, pitch: rig.pitch });
     ninjaModel.visible = true;
     blob.update();
@@ -92,14 +94,14 @@ export async function createGame(o) {
   }
 
   // a new loop (src/loop): back on the ledge facing the valley, the camera in the opening
-  // shot, easing into the gameplay framing after `hold` seconds
-  function restartAtLedge({ hold = 0 } = {}) {
+  // shot, easing into the gameplay framing after `hold` seconds (over `ease`)
+  function restartAtLedge({ hold = 0, ease } = {}) {
     player.teleport(ledge);
     player.state.facing = NINJA.yaw + Math.PI;
     player.state.lastSafe.copy(ledge);
     ninja.position.copy(ledge);
     ninja.rotation.y = player.state.facing;
-    rig.reset({ yaw: CAMERA.yaw, pitch: CAMERA.pitch, hold });
+    rig.reset({ yaw: CAMERA.yaw, pitch: CAMERA.pitch, hold, ease });
   }
 
   const blob = createContactShadow(physics, player);
